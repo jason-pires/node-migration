@@ -11,17 +11,19 @@ app.use(express.json());
 let count = 0;
 let sources = [];
 const table = `log`;
+const fields = `id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero`;
 const queryMax = `select max(id) as max From ${table}`;
-const statement = `INSERT INTO ${table} (id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero) 
-				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
-const bulkStatement = `INSERT INTO ${table} (id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero) 
-				VALUES ?;`;
+const statement = `INSERT INTO ${table} (${fields})
+				   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+const bulkStatement = `INSERT INTO ${table} (${fields})
+				   VALUES ?;`;
 
 app.get("/max", async (req, res) => {
 	console.log(`iniciando max...`);
 	console.time(`max`);
 	const result = await db_mysql.executeStream(queryMax);
 	count = result ? result[0].max : 0;
+	count = count ?? 0;
 	console.log(`max finalizado. resultado = ${count}`);
 	res.json({});
 });
@@ -29,8 +31,7 @@ app.get("/max", async (req, res) => {
 app.get("/source/stream", async (req, res) => {
 	console.log(`iniciando source...`);
 	console.time(`source`);
-	const query = `SELECT id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero
-		 FROM ${table} where id > ${count} order by id;`;
+	const query = `SELECT ${fields} FROM ${table} where id > ${count} order by id;`;
 	const stream = await db_mssql.execSQLStream(query);
 
 	console.log(`aguardando source...`);
@@ -64,40 +65,10 @@ app.get("/destination/stream", async (req, res) => {
 });
 
 app.get("/transfer/stream", async (req, res) => {
-	console.log(`iniciando transfer...`);
+	console.log(`iniciando transfer na tabela ${table}...`);
 	console.time(`transfer`);
-	const query = `SELECT id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero
-		 FROM ${table} where id > ${count} order by id;`;
-	const stream = await db_mssql.execSQLStream(query);
-
-	console.log(`aguardando source...`);
-	stream.on("row", async (row) => {
-		count++;
-		sources.push(row);
-		//if (sources.length >= 150) {
-		let start = new Date().getTime();
-		stream.pause();
-		await destination.bulkDestination(bulkStatement, sources);
-		processRows();
-		let end = new Date().getTime() - start;
-		const interval = new Date(end);
-		console.log(
-			`ultimo id inserido = ${row.id} em ${interval.getMilliseconds()}ms.`,
-		);
-		//}
-	});
-
-	stream.on("done", () => {
-		console.timeEnd(`transfer`);
-		console.log();
-		console.log(`linhas = ${sources.length}`);
-		console.log(`fim`);
-	});
-
-	function processRows() {
-		sources = [];
-		stream.resume();
-	}
+	destination.bulkProcess(fields, table);
+	console.timeEnd(`transfer`);
 	res.json({});
 });
 
