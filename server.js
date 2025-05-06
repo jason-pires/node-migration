@@ -8,13 +8,28 @@ const destination = require("./services/destination.service");
 
 app.use(express.json());
 
-let count = 0;
+let count = null;
 let sources = [];
 const table = `log`;
+/*
+tabelas pendentes:
+	email_envio
+	log
+	login_token
+	log_atividade
+*/
+
 const fields = `id, cpf, email, acao, url_api_externa, conteudo_enviado, conteudo_retornado, conteudo_erro, sucesso, dt_inicio, dt_termino, acesso_de_cliente, box, dt_vencimento_fatura, documento_id, bandeira_cartao, status_fatura, url_boleto, log_acao_id, documento_numero`;
+const params = fields
+	.split(",")
+	.filter((s) => s !== " " && s !== "")
+	.map((s) => "?")
+	.join(",");
+// const table = `log_atividade`;
+// const fields = `id, tipo_log, mensagem, dt_criacao`;
 const queryMax = `select max(id) as max From ${table}`;
 const statement = `INSERT INTO ${table} (${fields})
-				   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`;
+				   VALUES(${params});`;
 const bulkStatement = `INSERT INTO ${table} (${fields})
 				   VALUES ?;`;
 
@@ -67,7 +82,7 @@ app.get("/destination/stream", async (req, res) => {
 app.get("/transfer/stream", async (req, res) => {
 	console.log(`iniciando transfer na tabela ${table}...`);
 	console.time(`transfer`);
-	destination.bulkProcess(fields, table);
+	destination.bulkProcess(fields, table, count);
 	console.timeEnd(`transfer`);
 	res.json({});
 });

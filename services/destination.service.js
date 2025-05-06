@@ -27,7 +27,6 @@ async function fillDestination(query, sources) {
  * https://medium.com/@daviemakz/how-to-vastly-improve-mysql-performance-in-node-js-77220aec540b
  */
 async function bulkDestination(query, sources) {
-	console.log(`inserindo bulk...`);
 	const bulk = [];
 
 	for (const item of sources) {
@@ -35,21 +34,26 @@ async function bulkDestination(query, sources) {
 		bulk.push(values);
 	}
 
-	console.log(`bulk insert finalizado.`);
 	return await db_mysql.executeBulkSQL(query, bulk);
 }
 
 let sources = [];
+const paging = 50000;
 
-async function bulkProcess(fields, table) {
-	let count = await getMax(table);
-	const query = `SELECT TOP 10000 ${fields} FROM ${table} where id > ${count} order by id;`;
+async function bulkProcess(fields, table, fromMaxId) {
+	let count = fromMaxId;
+	if (!fromMaxId) {
+		count = await getMaxDestination(table);
+	}
+	const query = `SELECT TOP ${paging} ${fields} FROM ${table} where id > ${count} order by id;`;
 	const bulkStatement = `INSERT INTO ${table} (${fields}) VALUES ?;`;
 	const stream = await db_mssql.execSQLStream(query);
 
+	console.time(`transfer`);
+	console.log(`iniciando ${paging} registros pelo id = ${count}`);
 	stream.on("row", async (row) => {
 		stream.pause();
-		count++;
+		count = row.id;
 		sources.push(row);
 		// if (sources.length >= 1000) {
 		await bulkDestination(bulkStatement, sources);
@@ -60,13 +64,25 @@ async function bulkProcess(fields, table) {
 
 	stream.on("done", async () => {
 		console.log();
+		console.timeEnd(`transfer`);
 		console.log(`ultimo id = ${count}`);
-		// await bulkProcess(fields, table);
+		if (fromMaxId == count) {
+			console.log(`FINALIZADO - ultimo id = ${count}`);
+			return;
+		}
 		console.log(`continuando...`);
+		await bulkProcess(fields, table, count);
+	});
+
+	stream.on("error", async (err) => {
+		console.log();
+		console.error(`ERRO - ultimo id = ${count}`);
+		console.error(`ERRO - detalhe = ${err}`);
+		return;
 	});
 }
 
-async function getMax(table) {
+async function getMaxDestination(table) {
 	console.log(`iniciando max...`);
 	const queryMax = `select max(id) as max From ${table}`;
 	const result = await db_mysql.executeStream(queryMax);
