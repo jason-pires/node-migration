@@ -9,3 +9,4 @@ src/temp/*
 **/.env*
 .clinic
 script.js
+.vscode/**
